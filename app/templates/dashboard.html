@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Brand Mention Tracker</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 AI Brand Mention Tracker</h1>
+            <p>Track brand mentions across platforms using AI-powered insights</p>
+        </div>
+
+        <div class="control-panel">
+            <h2>Brand Monitoring Control</h2>
+            <div class="form-group">
+                <label for="brandInput">Brand Name:</label>
+                <input type="text" id="brandInput" placeholder="Enter brand name (e.g., Tesla, Apple, Microsoft)" />
+            </div>
+            <button class="btn btn-primary" onclick="startMonitoring()">Start Monitoring</button>
+            <button class="btn btn-danger" onclick="stopMonitoring()">Stop Monitoring</button>
+        </div>
+
+        <div class="status">
+            <h3>Monitoring Status</h3>
+            <p id="statusText">
+                <span class="status-indicator status-inactive"></span>
+                Not monitoring
+            </p>
+            <p id="connectionStatus" class="connection-status">
+                <span class="connection-indicator" id="connectionIndicator"></span>
+                <span id="connectionText">Connecting...</span>
+            </p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="totalMentions">0</div>
+                <div class="stat-label">Total Mentions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="platformCount">5</div>
+                <div class="stat-label">Platforms Monitored</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="recentMentions">0</div>
+                <div class="stat-label">Last 24 Hours</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="connectionCount">0</div>
+                <div class="stat-label">Active Connections</div>
+            </div>
+        </div>
+
+        <div class="controls-row">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search mentions..." />
+                <button onclick="searchMentions()">Search</button>
+            </div>
+            <div class="filter-controls">
+                <select id="platformFilter">
+                    <option value="">All Platforms</option>
+                    <option value="ChatGPT">ChatGPT</option>
+                    <option value="Reddit">Reddit</option>
+                    <option value="Twitter">Twitter</option>
+                    <option value="LinkedIn">LinkedIn</option>
+                    <option value="YouTube">YouTube</option>
+                </select>
+                <select id="sentimentFilter">
+                    <option value="">All Sentiments</option>
+                    <option value="positive">Positive</option>
+                    <option value="neutral">Neutral</option>
+                    <option value="negative">Negative</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="mentions-panel">
+            <h2>Recent Brand Mentions</h2>
+            <div id="mentionsContainer">
+                <div class="no-mentions">No mentions yet. Start monitoring to see results!</div>
+            </div>
+            <div class="pagination">
+                <button id="loadMoreBtn" onclick="loadMoreMentions()" style="display: none;">Load More</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
