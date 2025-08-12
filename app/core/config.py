@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     kwatch_api_key: str = ""
     
     # Monitoring
-    monitoring_interval: int = 30  # seconds
-    max_mentions_per_check: int = 10
+    monitoring_interval: int = 60  # seconds (increased to reduce API calls)
+    max_mentions_per_check: int = 5  # reduced to save tokens
+    openai_free_tier_limit: int = 15  # API calls per session
     
     # AI-Generated Brand Tracking Platforms
     monitored_platforms: List[str] = [

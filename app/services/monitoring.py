@@ -17,7 +17,7 @@ import os
 logger = logging.getLogger(__name__)
 
 class AIBrandMonitor:
-    """Main monitoring service for AI platforms"""
+    """Main monitoring service optimized for OpenAI free tier usage"""
     
     def __init__(self):
         self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
@@ -25,6 +25,12 @@ class AIBrandMonitor:
         self.is_monitoring = False
         self.current_brand = None
         self.monitoring_task = None
+        
+        # Free tier optimization
+        self.mention_cache = {}  # Cache generated mentions to avoid re-generating
+        self.api_call_count = 0  # Track API usage
+        self.max_api_calls_per_session = 15  # Conservative limit for free tier
+        self.last_generation_time = {}  # Rate limiting per brand
         
     def set_brand(self, brand_name: str):
         """Set the brand to monitor"""
@@ -113,81 +119,55 @@ class AIBrandMonitor:
     
     async def generate_brand_tracking_insight(self, brand_name: str, platform: str) -> List[Dict]:
         """
-        Generate realistic brand tracking insights using only OpenAI LLM
+        Generate realistic brand tracking insights using OpenAI's free tier efficiently
         """
         if not self.client:
             return []
-            
+        
+        # Check API call limit for free tier
+        if self.api_call_count >= self.max_api_calls_per_session:
+            logger.warning("API call limit reached for this session. Using cached data.")
+            return self._get_cached_mentions(brand_name, platform)
+        
+        # Check rate limiting (don't generate for same brand/platform too frequently)
+        cache_key = f"{brand_name}_{platform}"
+        current_time = datetime.utcnow()
+        
+        if cache_key in self.last_generation_time:
+            time_diff = (current_time - self.last_generation_time[cache_key]).seconds
+            if time_diff < 300:  # 5 minute cooldown
+                logger.info(f"Rate limited: Using cached data for {cache_key}")
+                return self._get_cached_mentions(brand_name, platform)
+        
         try:
+            # Optimized shorter prompts to save tokens on free tier
             prompts = {
-                "ChatGPT": f"""
-                Generate realistic conversations where users ask about or mention "{brand_name}". 
-                Create 2-3 realistic ChatGPT-style interactions that include:
-                - User questions about {brand_name}
-                - Comparisons with competitors  
-                - Reviews or experiences
-                - Feature questions
-                
-                Format as if these were real ChatGPT conversations mentioning {brand_name}.
-                Make them sound natural and varied.
-                """,
-                
-                "Reddit": f"""
-                Create realistic Reddit-style discussions about "{brand_name}". Include:
-                - Posts asking for opinions about {brand_name}
-                - Comments comparing {brand_name} to alternatives
-                - User experiences (both positive and negative)
-                - Technical questions about {brand_name}
-                
-                Make them sound like real Reddit users with authentic language and concerns.
-                """,
-                
-                "Twitter": f"""
-                Generate realistic Twitter-style mentions of "{brand_name}". Create:
-                - User tweets about {brand_name} experiences
-                - Questions to followers about {brand_name}
-                - Complaints or praise about {brand_name}
-                - News reactions involving {brand_name}
-                
-                Keep Twitter's character limit and style in mind.
-                """,
-                
-                "LinkedIn": f"""
-                Create professional LinkedIn-style mentions of "{brand_name}". Include:
-                - Professional recommendations
-                - Business use cases for {brand_name}
-                - Industry analysis mentioning {brand_name}
-                - Career-related discussions involving {brand_name}
-                
-                Maintain professional tone and business context.
-                """,
-                
-                "YouTube": f"""
-                Generate realistic YouTube video titles and descriptions that mention "{brand_name}". Include:
-                - Review video concepts
-                - Tutorial titles featuring {brand_name}
-                - Comparison videos with competitors
-                - Unboxing or first impression videos
-                
-                Make them sound like real YouTube content.
-                """
+                "ChatGPT": f"Generate 2 realistic ChatGPT conversations mentioning {brand_name}.",
+                "Reddit": f"Create 2 Reddit-style posts/comments about {brand_name}.",
+                "Twitter": f"Generate 2 realistic tweets mentioning {brand_name}.",
+                "LinkedIn": f"Create 2 professional LinkedIn posts about {brand_name}.",
+                "YouTube": f"Generate 2 YouTube video titles/descriptions about {brand_name}."
             }
             
             prompt = prompts.get(platform, prompts["ChatGPT"])
             
+            # Increment API call counter
+            self.api_call_count += 1
+            logger.info(f"API call {self.api_call_count}/{self.max_api_calls_per_session}")
+            
             response = await asyncio.to_thread(
                 self.client.chat.completions.create,
-                model="gpt-3.5-turbo",
+                model="gpt-3.5-turbo",  # Most cost-effective model
                 messages=[{
-                    "role": "system", 
-                    "content": f"Generate realistic social media content that mentions {brand_name}. Make it sound authentic and varied."
-                }, {
                     "role": "user", 
-                    "content": prompt
+                    "content": f"{prompt} Keep responses under 150 words total. Make them realistic and varied."
                 }],
-                temperature=0.8,
-                max_tokens=300
+                temperature=0.7,  # Slightly lower for consistency
+                max_tokens=150  # Reduced from 300 to save credits
             )
+            
+            # Update rate limiting
+            self.last_generation_time[cache_key] = current_time
             
             content = response.choices[0].message.content
             
@@ -212,41 +192,68 @@ class AIBrandMonitor:
                 }
                 mentions.append(mention)
             
+            # Cache the generated mentions
+            self._cache_mentions(brand_name, platform, mentions)
+            
             return mentions
             
         except Exception as e:
             logger.error(f"Brand tracking generation error: {e}")
-            return []
+            return self._get_cached_mentions(brand_name, platform)
+    
+    def _cache_mentions(self, brand_name: str, platform: str, mentions: List[Dict]):
+        """Cache generated mentions to avoid re-generating"""
+        cache_key = f"{brand_name}_{platform}"
+        self.mention_cache[cache_key] = {
+            "mentions": mentions,
+            "timestamp": datetime.utcnow()
+        }
+        
+    def _get_cached_mentions(self, brand_name: str, platform: str) -> List[Dict]:
+        """Get cached mentions with slight randomization"""
+        cache_key = f"{brand_name}_{platform}"
+        
+        if cache_key in self.mention_cache:
+            cached_data = self.mention_cache[cache_key]
+            # Return cached mentions with updated timestamps
+            mentions = []
+            for mention in cached_data["mentions"]:
+                updated_mention = mention.copy()
+                updated_mention["timestamp"] = datetime.utcnow()
+                updated_mention["author"] = f"User_{random.randint(1000, 9999)}"  # Randomize author
+                mentions.append(updated_mention)
+            return mentions
+        
+        # Return empty if no cache available
+        return []
     
     async def analyze_sentiment(self, text: str, brand_name: str) -> str:
         """
-        Analyze sentiment of brand mention using OpenAI
+        Analyze sentiment efficiently using keyword matching to save OpenAI credits
         """
-        if not self.client:
-            return "neutral"
-            
-        try:
-            response = await asyncio.to_thread(
-                self.client.chat.completions.create,
-                model="gpt-3.5-turbo",
-                messages=[{
-                    "role": "system",
-                    "content": "Analyze the sentiment towards the brand mentioned. Respond with only: positive, negative, or neutral"
-                }, {
-                    "role": "user", 
-                    "content": f"Analyze sentiment towards {brand_name} in this text: {text[:200]}"
-                }],
-                temperature=0.3,
-                max_tokens=10
-            )
-            
-            sentiment = response.choices[0].message.content.strip().lower()
-            if sentiment in ["positive", "negative", "neutral"]:
-                return sentiment
-            return "neutral"
-            
-        except Exception as e:
-            logger.error(f"Sentiment analysis error: {e}")
+        # Use simple keyword-based sentiment analysis to save API credits
+        text_lower = text.lower()
+        
+        # Positive indicators
+        positive_words = ["great", "excellent", "love", "amazing", "awesome", "best", "fantastic", 
+                         "recommend", "perfect", "outstanding", "brilliant", "wonderful", "impressive",
+                         "good", "nice", "happy", "satisfied", "quality", "reliable"]
+        
+        # Negative indicators  
+        negative_words = ["terrible", "awful", "hate", "worst", "horrible", "bad", "disappointing",
+                         "waste", "useless", "annoying", "frustrated", "problem", "issue", "broken",
+                         "poor", "cheap", "unreliable", "slow", "expensive", "difficult"]
+        
+        # Count positive and negative words
+        positive_count = sum(1 for word in positive_words if word in text_lower)
+        negative_count = sum(1 for word in negative_words if word in text_lower)
+        
+        # Determine sentiment
+        if positive_count > negative_count:
+            return "positive"
+        elif negative_count > positive_count:
+            return "negative"
+        else:
             return "neutral"
     
 
@@ -432,13 +439,21 @@ class AIBrandMonitor:
                 await asyncio.sleep(5)  # Short delay before retrying
     
     def get_status(self) -> Dict:
-        """Get current monitoring status"""
+        """Get current monitoring status with API usage info"""
         return {
             "is_active": self.is_monitoring,
             "current_brand": self.current_brand,
             "platforms_count": len(self.platforms),
-            "platforms": self.platforms
+            "platforms": self.platforms,
+            "api_calls_used": self.api_call_count,
+            "api_calls_remaining": max(0, self.max_api_calls_per_session - self.api_call_count),
+            "cache_size": len(self.mention_cache)
         }
+    
+    def reset_api_counter(self):
+        """Reset API call counter (useful for new sessions)"""
+        self.api_call_count = 0
+        logger.info("API call counter reset for new session")
 
 # Global monitor instance
 monitor = AIBrandMonitor()
